@@ -16,27 +16,208 @@ from tkinter import ttk, messagebox
 # --- CONSTANTES ---
 BAUDIOS = 9600
 DIST_FRENADO_CM = 20          # Distancia de frenado de emergencia
+DIST_AVISO_CM = 50            # Por debajo de esta distancia el sensor se muestra en ámbar
 INTERVALO_COLA_MS = 50        # Cada cuánto la interfaz revisa los datos del sensor
 RE_DIST = re.compile(rb"DIST:(\d+)")
 
+# --- ESTILO ---
+FUENTE = "Segoe UI"
+TEMA_INICIAL = "Carbón y Ámbar"   # Cambia este nombre para arrancar con otro tema
+HUECO = 6                         # Separación (px) entre botones de la cruceta
+
+# Cada tema define los mismos colores; el resto de la interfaz solo usa estos nombres.
+TEMAS = {
+    "Carbón y Ámbar": dict(
+        oscuro=True,
+        fondo="#12151A", superficie="#1A1E25", superficie2="#232834", borde="#2D3441",
+        texto="#E9EBEF", apagado="#8D96A5",
+        acento="#F5A524", exito="#2FD08A", peligro="#EF4F4F", aviso="#F5C542"),
+    "Azul Medianoche": dict(
+        oscuro=True,
+        fondo="#0B1220", superficie="#111A2B", superficie2="#18243A", borde="#25344F",
+        texto="#E6ECF5", apagado="#8696B0",
+        acento="#3B82F6", exito="#22C55E", peligro="#EF4444", aviso="#F59E0B"),
+    "Grafito y Cian": dict(
+        oscuro=True,
+        fondo="#0E1317", superficie="#151C22", superficie2="#1D262E", borde="#2A3540",
+        texto="#E7EEF3", apagado="#8A9AA8",
+        acento="#22D3EE", exito="#4ADE80", peligro="#F87171", aviso="#FBBF24"),
+    "Claro Profesional": dict(
+        oscuro=False,
+        fondo="#EEF1F6", superficie="#FFFFFF", superficie2="#F3F5F9", borde="#D3D9E3",
+        texto="#1B2430", apagado="#667386",
+        acento="#2563EB", exito="#16A34A", peligro="#DC2626", aviso="#D97706"),
+}
+
+# Grupos de servos: (título, detalle, ¿botones lado a lado?,
+#                    [(texto, comando al presionar, comando al soltar)])
+GRUPOS_SERVOS = [
+    ("BRAZO IZQUIERDO", "pin 8", False, [("▲   SUBIR", '4', '6'), ("▼   BAJAR", '5', '6')]),
+    ("AMBOS BRAZOS", "pines 8 y 10", False, [("▲   SUBIR", 'U', 'N'), ("▼   BAJAR", 'D', 'N')]),
+    ("CABEZA", "pin 9", True, [("◀   IZQ", '1', '3'), ("DER   ▶", '2', '3')]),
+    ("BRAZO DERECHO", "pin 10", False, [("▲   SUBIR", '7', '9'), ("▼   BAJAR", '8', '9')]),
+]
+
+
+def _rgb(color):
+    color = color.lstrip("#")
+    return tuple(int(color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def mezclar(color_a, color_b, cantidad):
+    """Mezcla dos colores hex. cantidad=0 devuelve color_a y cantidad=1 devuelve color_b."""
+    a, b = _rgb(color_a), _rgb(color_b)
+    return "#%02X%02X%02X" % tuple(round(a[i] + (b[i] - a[i]) * cantidad) for i in range(3))
+
+
+def texto_sobre(color):
+    """Texto oscuro o claro según el brillo del color de fondo."""
+    r, g, b = _rgb(color)
+    return "#14161A" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#FFFFFF"
+
+
+class Boton(tk.Frame):
+    """Botón plano de tamaño fijo con estados: normal, encima, presionado y deshabilitado.
+
+    - al_presionar / al_soltar: para botones de "mantener presionado" (al_soltar siempre se llama).
+    - al_click: se ejecuta al soltar con el mouse todavía encima del botón.
+    - estilo: "secundario" (neutro), "primario" (acento), "exito" o "peligro".
+    """
+
+    def __init__(self, parent, app, texto, estilo="secundario", ancho=160, alto=56,
+                 fuente=None, icono=None, tam_icono=18, al_presionar=None, al_soltar=None,
+                 al_click=None, control=False):
+        super().__init__(parent, width=app.px(ancho), height=app.px(alto), highlightthickness=1)
+        self.pack_propagate(False)
+        self.tema = app.tema
+        self.estilo = estilo
+        self.habilitado = True
+        self.encima = False
+        self.presionado = False
+        self.al_presionar = al_presionar
+        self.al_soltar = al_soltar
+        self.al_click = al_click
+
+        # El contenido (icono opcional + texto) queda centrado en el botón
+        self.contenido = tk.Frame(self)
+        self.contenido.pack(expand=True)
+        self.icono = None
+        if icono:
+            self.icono = tk.Label(self.contenido, text=icono, font=(FUENTE, tam_icono, "bold"))
+            self.icono.pack()
+        self.etiqueta = tk.Label(self.contenido, text=texto, font=fuente or app.fuente_boton,
+                                 justify="center")
+        self.etiqueta.pack()
+
+        self.piezas = [self, self.contenido, self.etiqueta] + ([self.icono] if self.icono else [])
+        for pieza in self.piezas:
+            pieza.bind("<Enter>", self._actualizar_encima)
+            pieza.bind("<Leave>", self._actualizar_encima)
+            pieza.bind("<ButtonPress-1>", self._presionar)
+            pieza.bind("<ButtonRelease-1>", self._soltar)
+        self._pintar()
+
+        if control:                     # Los botones de control se deshabilitan sin conexión
+            app.botones_control.append(self)
+
+    def _pintar(self):
+        t = self.tema
+        if not self.habilitado:
+            bg = t["superficie2"]
+            fg = mezclar(t["apagado"], bg, 0.35)
+            borde = t["borde"]
+            cursor = "arrow"
+        else:
+            cursor = "hand2"
+            if self.estilo == "secundario":
+                bg, fg, borde = t["superficie2"], t["texto"], t["borde"]
+                if self.presionado:
+                    bg, fg, borde = t["acento"], texto_sobre(t["acento"]), t["acento"]
+                elif self.encima:
+                    bg, borde = mezclar(bg, t["texto"], 0.08), t["acento"]
+            else:
+                base = {"primario": t["acento"], "exito": t["exito"], "peligro": t["peligro"]}[self.estilo]
+                bg = borde = base
+                fg = texto_sobre(base)
+                if self.presionado:
+                    bg = borde = mezclar(base, "#000000", 0.20)
+                elif self.encima:
+                    bg = borde = mezclar(base, "#FFFFFF" if t["oscuro"] else "#000000", 0.14)
+        self.configure(bg=bg, highlightbackground=borde, highlightcolor=borde)
+        for pieza in self.piezas:
+            pieza.configure(bg=bg, cursor=cursor)
+        for texto in (self.etiqueta, self.icono):
+            if texto is not None:
+                texto.configure(fg=fg)
+
+    def _puntero_encima(self):
+        """Comprueba con la posición real del mouse (más fiable que los eventos Enter/Leave)."""
+        x, y = self.winfo_pointerxy()
+        izquierda, arriba = self.winfo_rootx(), self.winfo_rooty()
+        return (izquierda <= x < izquierda + self.winfo_width()
+                and arriba <= y < arriba + self.winfo_height())
+
+    def _actualizar_encima(self, _=None):
+        encima = self._puntero_encima()
+        if encima != self.encima:
+            self.encima = encima
+            self._pintar()
+
+    def _presionar(self, _):
+        if not self.habilitado:
+            return
+        self.presionado = True
+        self._pintar()
+        if self.al_presionar:
+            self.al_presionar()
+
+    def _soltar(self, _):
+        if not self.presionado:
+            return
+        self.presionado = False
+        dentro = self._puntero_encima()
+        self.encima = dentro
+        self._pintar()
+        if self.al_soltar:
+            self.al_soltar()
+        if self.al_click and dentro:
+            self.al_click()
+
+    def set_texto(self, texto):
+        self.etiqueta.configure(text=texto)
+
+    def set_estilo(self, estilo):
+        self.estilo = estilo
+        self._pintar()
+
+    def set_habilitado(self, habilitado):
+        if self.habilitado != habilitado:
+            self.habilitado = habilitado
+            if not habilitado:
+                self.presionado = False
+            self._pintar()
+
 
 class WallEControlApp:
+    TXT_AUTO_OFF = "MODO AUTO   ·   1 TOQUE"
+    TXT_AUTO_ON = "AUTO ACTIVO   ·   TOCA PARA DETENER"
+    ESTADOS_CONEXION = {
+        "desconectado": ("DESCONECTADO", "apagado"),
+        "conectando": ("CONECTANDO…", "aviso"),
+        "conectado": ("CONECTADO", "exito"),
+    }
+
     def __init__(self, root):
         self.root = root
-        self.root.title("SISTEMA DE CONTROL GENERAL - COBOT WALL-E")
-        self.root.geometry("1280x800")
+        self.root.title("COBOT WALL-E · Sistema de control")
+        self.escala = max(1.0, root.winfo_fpixels("1i") / 96.0)   # Escala de pantalla (DPI)
+        self.root.geometry(f"{self.px(1280)}x{self.px(800)}")
+        self.root.minsize(self.px(1100), self.px(720))
 
-        # --- PALETA WALL-E INDUSTRIAL ---
-        self.C_BG_MAIN = "#22242B"
-        self.C_BG_BOX = "#2E313D"
-        self.C_ORANGE = "#E67E22"
-        self.C_YELLOW = "#F1C40F"
-        self.C_RED = "#C0392B"
-        self.C_TEXT = "#ECF0F1"
-        self.C_CYAN = "#00D2D3"
-        self.C_GREEN = "#27AE60"
-
-        self.root.configure(bg="#000000")
+        self.nombre_tema = TEMA_INICIAL
+        self.tema = TEMAS[TEMA_INICIAL]
+        self.fuente_boton = (FUENTE, 11, "bold")
+        self.root.configure(bg=self.tema["fondo"])
         try:
             self.root.state('zoomed')
         except tk.TclError:
@@ -52,10 +233,14 @@ class WallEControlApp:
         self.modo_actual = "PRINCIPAL"
         self.direccion = None               # None, 'F', 'B', 'L' o 'R'
         self.distancia_sensor = 999
+        self.ultima_lectura = None          # Último DIST recibido (None si no hay conexión)
+        self.estado_conexion = ("desconectado", "")
         self.auto_con_parada_activo = False
         self.auto_continuo_activo = False
         self.botones_auto_parada = []       # El botón de modo auto aparece en 2 pantallas
+        self.botones_control = []           # Botones que requieren conexión
 
+        self.aplicar_estilos_ttk()
         self.construir_splash()
         self.construir_interfaz()
 
@@ -69,30 +254,80 @@ class WallEControlApp:
     def motores_en_movimiento(self):
         return self.direccion is not None
 
+    def px(self, n):
+        """Convierte píxeles de diseño (96 DPI) a píxeles reales de la pantalla."""
+        return int(round(n * self.escala))
+
+    # =========================================================
+    # ESTILOS
+    # =========================================================
+    def aplicar_estilos_ttk(self):
+        t = self.tema
+        estilo = ttk.Style()
+        estilo.theme_use("clam")
+        estilo.configure("Cobot.Horizontal.TProgressbar", troughcolor=t["superficie2"],
+                         background=t["acento"], bordercolor=t["fondo"],
+                         lightcolor=t["acento"], darkcolor=t["acento"], thickness=6)
+        estilo.configure("TCombobox", fieldbackground=t["superficie2"], background=t["superficie2"],
+                         foreground=t["texto"], arrowcolor=t["texto"], bordercolor=t["borde"],
+                         lightcolor=t["superficie2"], darkcolor=t["superficie2"],
+                         selectbackground=t["superficie2"], selectforeground=t["texto"], padding=4)
+        estilo.map("TCombobox",
+                   fieldbackground=[("readonly", t["superficie2"])],
+                   foreground=[("readonly", t["texto"])],
+                   background=[("active", t["borde"]), ("readonly", t["superficie2"])],
+                   selectbackground=[("readonly", t["superficie2"])],
+                   selectforeground=[("readonly", t["texto"])],
+                   bordercolor=[("focus", t["acento"])])
+        # Lista desplegable del combobox
+        self.root.option_add("*TCombobox*Listbox.background", t["superficie2"])
+        self.root.option_add("*TCombobox*Listbox.foreground", t["texto"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", t["acento"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", texto_sobre(t["acento"]))
+        self.root.option_add("*TCombobox*Listbox.font", (FUENTE, 10))
+
+    def cambiar_tema(self, nombre):
+        if nombre in TEMAS and nombre != self.nombre_tema:
+            # Se reconstruye fuera del evento del combobox para no destruirlo mientras se usa
+            self.root.after(20, lambda: self.aplicar_tema(nombre))
+
+    def aplicar_tema(self, nombre):
+        puerto = self.combo_ports.get()
+        self.nombre_tema = nombre
+        self.tema = TEMAS[nombre]
+        self.frame_app.destroy()
+        self.botones_auto_parada = []
+        self.botones_control = []
+        self.aplicar_estilos_ttk()
+        self.root.configure(bg=self.tema["fondo"])
+        self.construir_interfaz()
+        self.frame_app.pack(fill="both", expand=True)
+        if puerto in self.combo_ports["values"]:
+            self.combo_ports.set(puerto)
+
     # =========================================================
     # PANTALLA DE ENTRADA
     # =========================================================
     def construir_splash(self):
-        self.frame_splash = tk.Frame(self.root, bg="#000000")
+        t, p = self.tema, self.px
+        self.frame_splash = tk.Frame(self.root, bg=t["fondo"])
         self.frame_splash.pack(fill="both", expand=True)
 
-        tk.Label(self.frame_splash, text="COBOT", fg="#E50914", bg="#000000",
-                 font=("Impact", 80, "bold")).pack(expand=True, pady=(80, 0))
-        tk.Label(self.frame_splash, text="WALL-E CONTROL SYSTEM", fg="#E50914", bg="#000000",
-                 font=("Arial", 14, "bold")).pack(pady=(0, 20))
+        centro = tk.Frame(self.frame_splash, bg=t["fondo"])
+        centro.place(relx=0.5, rely=0.5, anchor="center")
 
-        self.lbl_status = tk.Label(self.frame_splash, text="INICIANDO SISTEMAS...",
-                                   fg="#8C8C8C", bg="#000000", font=("Arial", 11))
-        self.lbl_status.pack(pady=5)
+        tk.Label(centro, text="COBOT", font=("Segoe UI Black", 64), fg=t["acento"],
+                 bg=t["fondo"]).pack()
+        tk.Label(centro, text="WALL-E   CONTROL   SYSTEM", font=(FUENTE, 13, "bold"),
+                 fg=t["texto"], bg=t["fondo"]).pack(pady=(0, p(34)))
 
-        style = ttk.Style()
-        style.theme_use('default')
-        style.configure("Red.Horizontal.TProgressbar", background='#E50914',
-                        troughcolor='#141414', bordercolor='#000000')
+        self.lbl_status = tk.Label(centro, text="INICIANDO SISTEMAS...", font=(FUENTE, 10),
+                                   fg=t["apagado"], bg=t["fondo"])
+        self.lbl_status.pack(pady=(0, p(10)))
 
-        self.progress = ttk.Progressbar(self.frame_splash, length=500, mode='determinate',
-                                        style="Red.Horizontal.TProgressbar")
-        self.progress.pack(pady=(0, 60))
+        self.progress = ttk.Progressbar(centro, length=p(460), mode='determinate',
+                                        style="Cobot.Horizontal.TProgressbar")
+        self.progress.pack()
 
     def ejecutar_animacion_entrada(self):
         pasos = [
@@ -103,73 +338,88 @@ class WallEControlApp:
             (100, "¡SISTEMAS LISTOS!"),
         ]
         if self.paso_animacion < len(pasos):
-            p, texto = pasos[self.paso_animacion]
-            self.progress['value'] = p
+            porcentaje, texto = pasos[self.paso_animacion]
+            self.progress['value'] = porcentaje
             self.lbl_status.config(text=texto)
             self.paso_animacion += 1
-            self.root.after(700, self.ejecutar_animacion_entrada)
+            self.root.after(550, self.ejecutar_animacion_entrada)
         else:
-            self.root.after(500, self.transicion_a_principal)
+            self.root.after(400, self.transicion_a_principal)
 
     def transicion_a_principal(self):
         self.frame_splash.destroy()
-        self.root.configure(bg=self.C_BG_MAIN)
         self.frame_app.pack(fill="both", expand=True)
 
     # =========================================================
     # ESTRUCTURA DE LA INTERFAZ
     # =========================================================
     def construir_interfaz(self):
-        self.frame_app = tk.Frame(self.root, bg=self.C_BG_MAIN)
+        t, p = self.tema, self.px
+        self.frame_app = tk.Frame(self.root, bg=t["fondo"])
 
-        # --- Barra superior ---
-        self.frame_top = tk.Frame(self.frame_app, bg=self.C_BG_BOX, padx=15, pady=10)
-        self.frame_top.pack(fill="x", side="top")
+        # ----- Encabezado: marca, conexión y tema -----
+        encabezado = tk.Frame(self.frame_app, bg=t["superficie"])
+        encabezado.pack(fill="x")
+        fila = tk.Frame(encabezado, bg=t["superficie"])
+        fila.pack(fill="x", padx=p(24), pady=p(12))
 
-        f_con = tk.Frame(self.frame_top, bg=self.C_BG_BOX)
-        f_con.pack(side="left")
+        marca = tk.Frame(fila, bg=t["superficie"])
+        marca.pack(side="left")
+        tk.Label(marca, text="COBOT", font=("Segoe UI Black", 18), fg=t["acento"],
+                 bg=t["superficie"]).pack(anchor="w")
+        tk.Label(marca, text="WALL-E CONTROL SYSTEM", font=(FUENTE, 8, "bold"), fg=t["apagado"],
+                 bg=t["superficie"]).pack(anchor="w")
 
-        tk.Label(f_con, text="PUERTO:", fg=self.C_YELLOW, bg=self.C_BG_BOX,
-                 font=("Arial", 11, "bold")).pack(side="left", padx=5)
-        self.combo_ports = ttk.Combobox(f_con, values=self.obtener_puertos(), width=12,
-                                        font=("Arial", 10), state="readonly")
-        self.combo_ports.pack(side="left", padx=5)
+        f_tema = tk.Frame(fila, bg=t["superficie"])
+        f_tema.pack(side="right")
+        tk.Label(f_tema, text="TEMA", font=(FUENTE, 8, "bold"), fg=t["apagado"],
+                 bg=t["superficie"]).pack(side="left", padx=(0, p(8)))
+        self.combo_tema = ttk.Combobox(f_tema, values=list(TEMAS), width=17, state="readonly",
+                                       font=(FUENTE, 10))
+        self.combo_tema.set(self.nombre_tema)
+        self.combo_tema.pack(side="left")
+        self.combo_tema.bind("<<ComboboxSelected>>", lambda e: self.cambiar_tema(self.combo_tema.get()))
+
+        f_con = tk.Frame(fila, bg=t["superficie"])
+        f_con.pack(side="left", padx=p(48))
+        tk.Label(f_con, text="PUERTO", font=(FUENTE, 8, "bold"), fg=t["apagado"],
+                 bg=t["superficie"]).pack(side="left", padx=(0, p(8)))
+        self.combo_ports = ttk.Combobox(f_con, values=self.obtener_puertos(), width=10,
+                                        state="readonly", font=(FUENTE, 10))
+        self.combo_ports.pack(side="left")
         if self.combo_ports['values']:
             self.combo_ports.current(0)
 
-        tk.Button(f_con, text="🔄", bg=self.C_ORANGE, fg=self.C_TEXT, font=("Arial", 10, "bold"),
-                  command=self.actualizar_puertos).pack(side="left", padx=3)
-        self.btn_conectar = tk.Button(f_con, text="CONECTAR", bg=self.C_GREEN, fg=self.C_TEXT,
-                                      font=("Arial", 10, "bold"), padx=10, command=self.conectar)
-        self.btn_conectar.pack(side="left", padx=5)
-        tk.Button(f_con, text="DESCONECTAR", bg=self.C_RED, fg=self.C_TEXT,
-                  font=("Arial", 10, "bold"), padx=10,
-                  command=self.desconectar).pack(side="left", padx=5)
+        fuente_chica = (FUENTE, 10, "bold")
+        Boton(f_con, self, "↻", "secundario", 38, 32, fuente=(FUENTE, 13, "bold"),
+              al_click=self.actualizar_puertos).pack(side="left", padx=(p(6), 0))
+        self.btn_conectar = Boton(f_con, self, "CONECTAR", "primario", 112, 32, fuente=fuente_chica,
+                                  al_click=self.conectar)
+        self.btn_conectar.pack(side="left", padx=(p(14), 0))
+        Boton(f_con, self, "DESCONECTAR", "secundario", 128, 32, fuente=fuente_chica,
+              al_click=self.desconectar).pack(side="left", padx=(p(6), 0))
+        self.lbl_estado = tk.Label(f_con, text="", font=(FUENTE, 9, "bold"), bg=t["superficie2"],
+                                   padx=p(12), pady=p(6))
+        self.lbl_estado.pack(side="left", padx=(p(14), 0))
 
-        self.lbl_estado = tk.Label(f_con, text="● DESCONECTADO", fg="#8C8C8C", bg=self.C_BG_BOX,
-                                   font=("Arial", 10, "bold"))
-        self.lbl_estado.pack(side="left", padx=10)
+        tk.Frame(self.frame_app, bg=t["borde"], height=1).pack(fill="x")
 
-        f_nav = tk.Frame(self.frame_top, bg=self.C_BG_BOX)
-        f_nav.pack(side="left", padx=30)
-        self.crear_btn_nav(f_nav, "1. PRINCIPAL (TODO)", "PRINCIPAL")
-        self.crear_btn_nav(f_nav, "2. SERVOS", "SERVOS")
-        self.crear_btn_nav(f_nav, "3. RUEDAS", "RUEDAS")
-        self.crear_btn_nav(f_nav, "4. AUTO CONTINUO", "AUTO_CONTINUO")
+        # ----- Barra de secciones y sensor -----
+        barra = tk.Frame(self.frame_app, bg=t["fondo"])
+        barra.pack(fill="x", padx=p(24), pady=(p(10), 0))
+        self.crear_tabs(barra)
+        self.crear_indicador_sensor(barra)
+        tk.Frame(self.frame_app, bg=t["borde"], height=1).pack(fill="x", padx=p(24))
 
-        self.lbl_distancia = tk.Label(self.frame_top, text="SENSOR: --- cm", fg=self.C_CYAN,
-                                      bg=self.C_BG_BOX, font=("Arial", 13, "bold"))
-        self.lbl_distancia.pack(side="right", padx=15)
-
-        # --- Contenedor de vistas ---
-        self.container = tk.Frame(self.frame_app, bg=self.C_BG_MAIN)
-        self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        # ----- Contenedor de vistas -----
+        self.container = tk.Frame(self.frame_app, bg=t["fondo"])
+        self.container.pack(fill="both", expand=True, padx=p(24), pady=p(16))
         self.container.grid_rowconfigure(0, weight=1)
         self.container.grid_columnconfigure(0, weight=1)
 
         self.frames = {}
         for nombre in ("PRINCIPAL", "SERVOS", "RUEDAS", "AUTO_CONTINUO"):
-            frame = tk.Frame(self.container, bg=self.C_BG_MAIN)
+            frame = tk.Frame(self.container, bg=t["fondo"])
             frame.grid(row=0, column=0, sticky="nsew")
             self.frames[nombre] = frame
 
@@ -177,11 +427,64 @@ class WallEControlApp:
         self.construir_pantalla_servos()
         self.construir_pantalla_ruedas()
         self.construir_pantalla_auto_continuo()
-        self.mostrar_frame("PRINCIPAL")
 
-    def crear_btn_nav(self, parent, texto, modo):
-        tk.Button(parent, text=texto, bg="#1A1C23", fg=self.C_TEXT, font=("Arial", 11, "bold"),
-                  command=lambda: self.cambiar_modo(modo), padx=12, pady=6).pack(side="left", padx=5)
+        self.mostrar_frame(self.modo_actual)
+        self.refrescar_estado()
+
+    def refrescar_estado(self):
+        """Vuelve a pintar el estado actual (útil después de reconstruir la interfaz)."""
+        self.set_estado_conexion(*self.estado_conexion)
+        self.btn_conectar.set_habilitado(not self.conectando)
+        self.actualizar_sensor(self.ultima_lectura)
+        self.set_estado_auto_parada(self.auto_con_parada_activo)
+        self.set_estado_auto_continuo(self.auto_continuo_activo)
+
+    def centrar(self, frame):
+        centro = tk.Frame(frame, bg=self.tema["fondo"])
+        centro.place(relx=0.5, rely=0.5, anchor="center")
+        return centro
+
+    def crear_tarjeta(self, parent, titulo, detalle=""):
+        """Tarjeta con título. Devuelve (tarjeta, cuerpo): se coloca la tarjeta y se llena el cuerpo."""
+        t, p = self.tema, self.px
+        tarjeta = tk.Frame(parent, bg=t["superficie"], highlightthickness=1,
+                           highlightbackground=t["borde"], highlightcolor=t["borde"])
+        cabecera = tk.Frame(tarjeta, bg=t["superficie"])
+        cabecera.pack(fill="x", padx=p(16), pady=(p(14), p(4)))
+        tk.Frame(cabecera, bg=t["acento"], width=p(4), height=p(16)).pack(side="left", padx=(0, p(8)))
+        tk.Label(cabecera, text=titulo, font=(FUENTE, 11, "bold"), fg=t["texto"],
+                 bg=t["superficie"]).pack(side="left")
+        if detalle:
+            tk.Label(cabecera, text=detalle, font=(FUENTE, 9), fg=t["apagado"],
+                     bg=t["superficie"]).pack(side="right", padx=(p(16), 0))
+        cuerpo = tk.Frame(tarjeta, bg=t["superficie"])
+        cuerpo.pack(fill="both", expand=True, padx=p(16), pady=(p(6), p(16)))
+        return tarjeta, cuerpo
+
+    # ----- Secciones (pestañas) -----
+    def crear_tabs(self, parent):
+        t, p = self.tema, self.px
+        self.tabs = {}
+        for modo, texto in (("PRINCIPAL", "PRINCIPAL"), ("SERVOS", "SERVOS"),
+                            ("RUEDAS", "RUEDAS"), ("AUTO_CONTINUO", "AUTO CONTINUO")):
+            celda = tk.Frame(parent, bg=t["fondo"])
+            celda.pack(side="left", padx=(0, p(4)))
+            etiqueta = tk.Label(celda, text=texto, font=(FUENTE, 11, "bold"), bg=t["fondo"],
+                                fg=t["apagado"], padx=p(18), pady=p(10), cursor="hand2")
+            etiqueta.pack()
+            linea = tk.Frame(celda, bg=t["fondo"], height=p(3))
+            linea.pack(fill="x")
+            etiqueta.bind("<Button-1>", lambda e, m=modo: self.cambiar_modo(m))
+            etiqueta.bind("<Enter>", lambda e, l=etiqueta: l.config(fg=t["texto"]))
+            etiqueta.bind("<Leave>", lambda e: self.marcar_tab(self.modo_actual))
+            self.tabs[modo] = (etiqueta, linea)
+
+    def marcar_tab(self, modo):
+        t = self.tema
+        for nombre, (etiqueta, linea) in self.tabs.items():
+            activo = nombre == modo
+            etiqueta.config(fg=t["texto"] if activo else t["apagado"])
+            linea.config(bg=t["acento"] if activo else t["fondo"])
 
     def cambiar_modo(self, nuevo_modo):
         if self.motores_en_movimiento or self.auto_con_parada_activo or self.auto_continuo_activo:
@@ -193,150 +496,163 @@ class WallEControlApp:
 
     def mostrar_frame(self, modo):
         self.frames[modo].tkraise()
+        self.marcar_tab(modo)
+
+    # ----- Indicador del sensor -----
+    def crear_indicador_sensor(self, parent):
+        t, p = self.tema, self.px
+        caja = tk.Frame(parent, bg=t["fondo"])
+        caja.pack(side="right")
+        tk.Label(caja, text="DISTANCIA", font=(FUENTE, 8, "bold"), fg=t["apagado"],
+                 bg=t["fondo"]).pack(side="left", padx=(0, p(10)))
+        self.lbl_distancia = tk.Label(caja, text="---", width=9, anchor="e",
+                                      font=(FUENTE, 15, "bold"), fg=t["apagado"], bg=t["fondo"])
+        self.lbl_distancia.pack(side="left")
+        self.sensor_ancho, self.sensor_alto = p(120), p(8)
+        self.barra_sensor = tk.Canvas(caja, width=self.sensor_ancho, height=self.sensor_alto,
+                                      bg=t["fondo"], highlightthickness=0)
+        self.barra_sensor.pack(side="left", padx=(p(12), 0))
+
+    def actualizar_sensor(self, valor):
+        """Muestra la distancia con color según el peligro. valor=None significa sin datos."""
+        t = self.tema
+        if valor is None:
+            texto, color, fraccion = "---", t["apagado"], 0
+        elif valor >= 999:                  # El Arduino envía 999 cuando no hay eco
+            texto, color, fraccion = "> 400 cm", t["exito"], 1
+        else:
+            texto = f"{valor} cm"
+            if valor <= DIST_FRENADO_CM:
+                color = t["peligro"]
+            elif valor <= DIST_AVISO_CM:
+                color = t["aviso"]
+            else:
+                color = t["exito"]
+            fraccion = min(valor, 200) / 200
+
+        self.lbl_distancia.config(text=texto, fg=color)
+        barra, ancho, alto = self.barra_sensor, self.sensor_ancho, self.sensor_alto
+        barra.delete("all")
+        barra.create_rectangle(0, 0, ancho, alto, fill=t["superficie2"], outline="")
+        if fraccion > 0:
+            barra.create_rectangle(0, 0, ancho * fraccion, alto, fill=color, outline="")
+        marca = ancho * DIST_FRENADO_CM / 200       # Marca del límite de frenado
+        barra.create_line(marca, 0, marca, alto, fill=t["peligro"], width=2)
 
     # =========================================================
     # SECCIÓN 1: PRINCIPAL
     # =========================================================
     def construir_pantalla_principal(self):
-        f = self.frames["PRINCIPAL"]
-        f.grid_rowconfigure(0, weight=1)
-        f.grid_columnconfigure(0, weight=1)
-        f.grid_columnconfigure(1, weight=1)
-
-        f_servos = tk.Frame(f, bg=self.C_BG_MAIN)
-        f_servos.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        self.crear_grupo_servos_ordenados(f_servos)
-
-        f_ruedas = tk.Frame(f, bg=self.C_BG_MAIN)
-        f_ruedas.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-        self.crear_cruceta_ruedas(f_ruedas)
+        centro = self.centrar(self.frames["PRINCIPAL"])
+        servos = self.crear_panel_servos(centro, columnas=2)
+        servos.grid(row=0, column=0, sticky="n")
+        ruedas = self.crear_cruceta_ruedas(centro, 116, 88)
+        ruedas.grid(row=0, column=1, sticky="n", padx=(self.px(16), 0), pady=self.px(8))
 
     # =========================================================
     # SECCIÓN 2: SERVOS
     # =========================================================
     def construir_pantalla_servos(self):
-        f = self.frames["SERVOS"]
-        f.grid_rowconfigure(0, weight=1)
-        f.grid_columnconfigure(0, weight=1)
+        centro = self.centrar(self.frames["SERVOS"])
+        self.crear_panel_servos(centro, columnas=4, alto=68).pack()
 
-        panel = tk.Frame(f, bg=self.C_BG_MAIN)
-        panel.grid(row=0, column=0, sticky="nsew")
-        self.crear_grupo_servos_ordenados(panel)
-
-    def crear_panel_servo(self, grid, col, titulo, color_titulo, filas=2):
-        panel = tk.LabelFrame(grid, text=titulo, fg=color_titulo, bg=self.C_BG_BOX,
-                              font=("Arial", 11, "bold"), padx=10, pady=10)
-        panel.grid(row=0, column=col, sticky="nsew", padx=4, pady=8)
-        for i in range(filas):
-            panel.grid_rowconfigure(i, weight=1)
-        panel.grid_columnconfigure(0, weight=1)
+    def crear_panel_servos(self, parent, columnas, ancho=208, alto=60):
+        """Una tarjeta por servo. Todas tienen 2 filas de botones para que queden parejas."""
+        p = self.px
+        panel = tk.Frame(parent, bg=self.tema["fondo"])
+        mitad = (ancho - HUECO) // 2
+        for i, (titulo, detalle, lado_a_lado, botones) in enumerate(GRUPOS_SERVOS):
+            tarjeta, cuerpo = self.crear_tarjeta(panel, titulo, detalle)
+            tarjeta.grid(row=i // columnas, column=i % columnas, sticky="nsew", padx=p(8), pady=p(8))
+            for n, (texto, mover, parar) in enumerate(botones):
+                if lado_a_lado:
+                    fila, col, span, w = 0, n, 1, mitad
+                else:
+                    fila, col, span, w = n, 0, 2, ancho
+                Boton(cuerpo, self, texto, "secundario", w, alto, control=True,
+                      al_presionar=lambda c=mover: self.enviar(c),
+                      al_soltar=lambda c=parar: self.enviar(c)
+                      ).grid(row=fila, column=col, columnspan=span,
+                             padx=(p(HUECO) if col else 0, 0), pady=p(5))
+            if titulo == "CABEZA":
+                Boton(cuerpo, self, "AUTO   ·   RUTINA 10 s", "secundario", ancho, alto, control=True,
+                      fuente=(FUENTE, 10, "bold"),
+                      al_click=lambda: self.enviar('A')).grid(row=1, column=0, columnspan=2, pady=p(5))
+        for c in range(columnas):
+            panel.grid_columnconfigure(c, weight=1, uniform="servos")
         return panel
-
-    def crear_grupo_servos_ordenados(self, parent):
-        grid = tk.Frame(parent, bg=self.C_BG_MAIN)
-        grid.pack(fill="both", expand=True)
-        for col in range(4):
-            grid.grid_columnconfigure(col, weight=1)
-        grid.grid_rowconfigure(0, weight=1)
-
-        # Brazo izquierdo (pin 8)
-        f8 = self.crear_panel_servo(grid, 0, " BRAZO IZQ (8) ", self.C_YELLOW)
-        self.crear_btn_servo_presion_grid(f8, "◀ SUBIR IZQ", '4', '6', 0, self.C_YELLOW)
-        self.crear_btn_servo_presion_grid(f8, "BAJAR IZQ ▶", '5', '6', 1, self.C_ORANGE)
-
-        # Ambos brazos
-        f_both = self.crear_panel_servo(grid, 1, " AMBOS BRAZOS ", "#2ECC71")
-        self.crear_btn_servo_presion_grid(f_both, "🙌 SUBIR AMBOS", 'U', 'N', 0, "#2ECC71")
-        self.crear_btn_servo_presion_grid(f_both, "👇 BAJAR AMBOS", 'D', 'N', 1, self.C_GREEN)
-
-        # Cabeza (pin 9)
-        f9 = self.crear_panel_servo(grid, 2, " CABEZA (9) ", self.C_CYAN, filas=3)
-        self.crear_btn_servo_presion_grid(f9, "◀ GIRAR IZQ", '1', '3', 0, self.C_YELLOW)
-        self.crear_btn_servo_presion_grid(f9, "GIRAR DER ▶", '2', '3', 1, self.C_ORANGE)
-        tk.Button(f9, text="🤖 AUTO (10s)", bg="#8E44AD", fg=self.C_TEXT, font=("Arial", 10, "bold"),
-                  command=lambda: self.enviar('A')).grid(row=2, column=0, sticky="nsew", pady=4)
-
-        # Brazo derecho (pin 10)
-        f10 = self.crear_panel_servo(grid, 3, " BRAZO DER (10) ", self.C_YELLOW)
-        self.crear_btn_servo_presion_grid(f10, "◀ SUBIR DER", '7', '9', 0, self.C_YELLOW)
-        self.crear_btn_servo_presion_grid(f10, "BAJAR DER ▶", '8', '9', 1, self.C_ORANGE)
-
-    def crear_btn_servo_presion_grid(self, parent, texto, cmd_mover, cmd_parar, row, color):
-        btn = tk.Button(parent, text=texto, bg=color,
-                        fg="#1A1C23" if color == self.C_YELLOW else self.C_TEXT,
-                        font=("Arial", 11, "bold"))
-        btn.grid(row=row, column=0, sticky="nsew", pady=4)
-        btn.bind("<ButtonPress-1>", lambda e: self.enviar(cmd_mover))
-        btn.bind("<ButtonRelease-1>", lambda e: self.enviar(cmd_parar))
 
     # =========================================================
     # SECCIÓN 3: RUEDAS
     # =========================================================
     def construir_pantalla_ruedas(self):
-        f = self.frames["RUEDAS"]
-        f.grid_rowconfigure(0, weight=1)
-        f.grid_columnconfigure(0, weight=1)
-        self.crear_cruceta_ruedas(f)
+        centro = self.centrar(self.frames["RUEDAS"])
+        self.crear_cruceta_ruedas(centro, 160, 116, fuente=(FUENTE, 13, "bold"),
+                                  tam_icono=26).pack()
 
-    def crear_btn_rueda(self, parent, texto, row, col, cmd_mover, cmd_parar):
-        btn = tk.Button(parent, text=texto, bg=self.C_ORANGE, fg=self.C_TEXT, font=("Arial", 14, "bold"))
-        btn.grid(row=row, column=col, sticky="nsew", padx=6, pady=6)
-        btn.bind("<ButtonPress-1>", lambda e: cmd_mover())
-        btn.bind("<ButtonRelease-1>", lambda e: cmd_parar())
+    def crear_cruceta_ruedas(self, parent, ancho, alto, fuente=None, tam_icono=20):
+        """Cruceta de dirección + botón de modo auto. Devuelve la tarjeta."""
+        t, p = self.tema, self.px
+        tarjeta, cuerpo = self.crear_tarjeta(parent, "TRACCIÓN", "mantén presionado")
 
-    def crear_cruceta_ruedas(self, parent):
-        grid = tk.Frame(parent, bg=self.C_BG_MAIN)
-        grid.pack(fill="both", expand=True, padx=10, pady=10)
+        cruceta = tk.Frame(cuerpo, bg=t["superficie"])
+        cruceta.pack()
         for i in range(3):
-            grid.grid_columnconfigure(i, weight=1)
-            grid.grid_rowconfigure(i, weight=1)
+            cruceta.grid_columnconfigure(i, minsize=p(ancho) + 2 * p(HUECO))
+            cruceta.grid_rowconfigure(i, minsize=p(alto) + 2 * p(HUECO))
 
-        self.crear_btn_rueda(grid, "▲\nAVANZAR", 0, 1,
-                             self.presionar_avanzar_manual, self.soltar_avanzar_manual)
-        self.crear_btn_rueda(grid, "◄ IZQUIERDA", 1, 0,
-                             lambda: self.enviar('L'), lambda: self.enviar('S'))
-        self.crear_btn_rueda(grid, "DERECHA ►", 1, 2,
-                             lambda: self.enviar('R'), lambda: self.enviar('S'))
-        self.crear_btn_rueda(grid, "▼\nATRAS", 2, 1,
-                             lambda: self.enviar('B'), lambda: self.enviar('S'))
+        def boton(texto, icono, fila, col, estilo="secundario", **acciones):
+            Boton(cruceta, self, texto, estilo, ancho, alto, fuente=fuente, icono=icono,
+                  tam_icono=tam_icono, control=True,
+                  **acciones).grid(row=fila, column=col, padx=p(HUECO), pady=p(HUECO))
+
+        boton("AVANZAR", "▲", 0, 1,
+              al_presionar=self.presionar_avanzar_manual, al_soltar=self.soltar_avanzar_manual)
+        boton("IZQUIERDA", "◀", 1, 0,
+              al_presionar=lambda: self.enviar('L'), al_soltar=lambda: self.enviar('S'))
+        boton("STOP", "■", 1, 1, "peligro", al_presionar=self.parar_ruedas)
+        boton("DERECHA", "▶", 1, 2,
+              al_presionar=lambda: self.enviar('R'), al_soltar=lambda: self.enviar('S'))
+        boton("ATRÁS", "▼", 2, 1,
+              al_presionar=lambda: self.enviar('B'), al_soltar=lambda: self.enviar('S'))
 
         # El botón de modo auto existe en dos pantallas; el texto se actualiza en ambos
-        btn_auto = tk.Button(grid, text=self.TXT_AUTO_OFF, bg=self.C_YELLOW, fg="#1A1C23",
-                             font=("Arial", 12, "bold"), command=self.toggle_auto_con_parada)
-        btn_auto.grid(row=1, column=1, sticky="nsew", padx=6, pady=6)
-        self.botones_auto_parada.append(btn_auto)
+        auto = Boton(cuerpo, self, self.TXT_AUTO_OFF, "primario", 3 * ancho + 4 * HUECO, 52,
+                     control=True, al_click=self.toggle_auto_con_parada)
+        auto.pack(pady=(p(12), 0))
+        self.botones_auto_parada.append(auto)
+        return tarjeta
 
     # =========================================================
     # SECCIÓN 4: AUTO CONTINUO
     # =========================================================
     def construir_pantalla_auto_continuo(self):
-        f = self.frames["AUTO_CONTINUO"]
-        f.grid_rowconfigure(0, weight=1)
-        f.grid_columnconfigure(0, weight=1)
+        t, p = self.tema, self.px
+        centro = self.centrar(self.frames["AUTO_CONTINUO"])
+        tarjeta, cuerpo = self.crear_tarjeta(centro, "MODO AUTOMÁTICO CONTINUO",
+                                             f"frena a {DIST_FRENADO_CM} cm")
+        tarjeta.pack()
 
-        box = tk.Frame(f, bg=self.C_BG_BOX, padx=30, pady=30)
-        box.grid(row=0, column=0, sticky="nsew", padx=40, pady=40)
-        box.grid_rowconfigure(0, weight=1)
-        box.grid_rowconfigure(1, weight=2)
-        box.grid_rowconfigure(2, weight=2)
-        box.grid_columnconfigure(0, weight=1)
+        tk.Label(cuerpo, justify="left", font=(FUENTE, 11), fg=t["apagado"], bg=t["superficie"],
+                 text="El robot avanza de forma continua hasta que presiones DETENER\n"
+                      f"o hasta que el sensor detecte un obstáculo a {DIST_FRENADO_CM} cm o menos."
+                 ).pack(anchor="w", pady=(p(4), p(18)))
 
-        tk.Label(box, text="MODO AUTOMÁTICO CONTINUO\nEl robot avanza continuamente hasta presionar Detener.",
-                 fg=self.C_TEXT, bg=self.C_BG_BOX, font=("Arial", 14, "bold")).grid(row=0, column=0, sticky="nsew")
+        fila = tk.Frame(cuerpo, bg=t["superficie"])
+        fila.pack()
+        Boton(fila, self, "▶   AVANZAR CONTINUO", "primario", 270, 72, control=True,
+              fuente=(FUENTE, 12, "bold"),
+              al_click=self.iniciar_auto_continuo).pack(side="left", padx=(0, p(10)))
+        Boton(fila, self, "■   DETENER", "peligro", 200, 72, control=True,
+              fuente=(FUENTE, 12, "bold"),
+              al_presionar=self.detener_auto_continuo).pack(side="left")
 
-        tk.Button(box, text="▶ AVANZAR CONTINUO", bg=self.C_ORANGE, fg=self.C_TEXT,
-                  font=("Arial", 16, "bold"),
-                  command=self.iniciar_auto_continuo).grid(row=1, column=0, sticky="nsew", pady=15)
-        tk.Button(box, text="⏹ DETENER Y PARAR", bg=self.C_RED, fg=self.C_TEXT,
-                  font=("Arial", 16, "bold"),
-                  command=self.detener_auto_continuo).grid(row=2, column=0, sticky="nsew", pady=15)
+        self.lbl_auto_estado = tk.Label(cuerpo, font=(FUENTE, 10, "bold"), bg=t["superficie"])
+        self.lbl_auto_estado.pack(anchor="w", pady=(p(16), 0))
 
     # =========================================================
     # LÓGICA DE TRACCIÓN
     # =========================================================
-    TXT_AUTO_OFF = "🤖 MODO AUTO\n(1 Toque / Parada)"
-    TXT_AUTO_ON = "🤖 AUTO ACTIVO\n(Avanzando...)"
-
     def obstaculo_cerca(self):
         return 0 < self.distancia_sensor <= DIST_FRENADO_CM
 
@@ -368,13 +684,28 @@ class WallEControlApp:
         if not self.auto_con_parada_activo:
             self.enviar('S')
 
+    def parar_ruedas(self):
+        """Botón STOP: detiene la tracción en cualquier modo."""
+        if self.auto_con_parada_activo:
+            self.desactivar_auto_con_parada()
+        elif self.auto_continuo_activo:
+            self.detener_auto_continuo()
+        else:
+            self.enviar('S')
+
     def set_estado_auto_parada(self, activo):
         self.auto_con_parada_activo = activo
         for btn in self.botones_auto_parada:
-            if activo:
-                btn.config(bg=self.C_GREEN, fg=self.C_TEXT, text=self.TXT_AUTO_ON)
-            else:
-                btn.config(bg=self.C_YELLOW, fg="#1A1C23", text=self.TXT_AUTO_OFF)
+            btn.set_estilo("exito" if activo else "primario")
+            btn.set_texto(self.TXT_AUTO_ON if activo else self.TXT_AUTO_OFF)
+
+    def set_estado_auto_continuo(self, activo):
+        self.auto_continuo_activo = activo
+        t = self.tema
+        if activo:
+            self.lbl_auto_estado.config(text="●  ESTADO: AVANZANDO", fg=t["exito"])
+        else:
+            self.lbl_auto_estado.config(text="●  ESTADO: EN ESPERA", fg=t["apagado"])
 
     def toggle_auto_con_parada(self):
         if self.auto_con_parada_activo:
@@ -388,10 +719,10 @@ class WallEControlApp:
 
     def iniciar_auto_continuo(self):
         if self.enviar('F'):
-            self.auto_continuo_activo = True
+            self.set_estado_auto_continuo(True)
 
     def detener_auto_continuo(self):
-        self.auto_continuo_activo = False
+        self.set_estado_auto_continuo(False)
         self.enviar('S')
 
     def frenar_por_obstaculo(self):
@@ -415,8 +746,19 @@ class WallEControlApp:
         if puertos:
             self.combo_ports.current(0)
 
-    def set_estado_conexion(self, texto, color):
-        self.lbl_estado.config(text=texto, fg=color)
+    def set_estado_conexion(self, estado, detalle=""):
+        self.estado_conexion = (estado, detalle)
+        texto, clave_color = self.ESTADOS_CONEXION[estado]
+        if detalle:
+            texto += f"  ·  {detalle}"
+        self.lbl_estado.config(text=f"●  {texto}", fg=self.tema[clave_color])
+        self.actualizar_habilitacion()
+
+    def actualizar_habilitacion(self):
+        """Los botones de control solo funcionan con el robot conectado."""
+        conectado = bool(self.arduino and self.arduino.is_open)
+        for boton in self.botones_control:
+            boton.set_habilitado(conectado)
 
     def conectar(self):
         port = self.combo_ports.get()
@@ -427,8 +769,8 @@ class WallEControlApp:
 
         # Abrir un COM Bluetooth puede tardar varios segundos: se hace fuera del hilo de la interfaz
         self.conectando = True
-        self.btn_conectar.config(state="disabled")
-        self.set_estado_conexion("● CONECTANDO...", self.C_YELLOW)
+        self.btn_conectar.set_habilitado(False)
+        self.set_estado_conexion("conectando")
         threading.Thread(target=self._abrir_puerto, args=(port,), daemon=True).start()
 
     def _abrir_puerto(self, port):
@@ -484,7 +826,8 @@ class WallEControlApp:
 
         if ultima_dist is not None and self.arduino:
             self.distancia_sensor = ultima_dist
-            self.lbl_distancia.config(text=f"SENSOR: {ultima_dist} cm")
+            self.ultima_lectura = ultima_dist
+            self.actualizar_sensor(ultima_dist)
             if self.obstaculo_cerca():
                 self.frenar_por_obstaculo()
 
@@ -492,17 +835,19 @@ class WallEControlApp:
 
     def _conexion_establecida(self, port, ser):
         self.conectando = False
-        self.btn_conectar.config(state="normal")
+        self.btn_conectar.set_habilitado(True)
         self.arduino = ser
         self.distancia_sensor = 999
+        self.ultima_lectura = None
         self.direccion = None
+        self.actualizar_sensor(None)
         self._iniciar_lectura(ser)
-        self.set_estado_conexion(f"● CONECTADO ({port})", self.C_GREEN)
+        self.set_estado_conexion("conectado", port)
 
     def _conexion_fallida(self, port, error):
         self.conectando = False
-        self.btn_conectar.config(state="normal")
-        self.set_estado_conexion("● DESCONECTADO", "#8C8C8C")
+        self.btn_conectar.set_habilitado(True)
+        self.set_estado_conexion("desconectado")
         messagebox.showerror("Error", f"No se pudo conectar a {port}.\n\nDetalle: {error}")
 
     def cerrar_conexion(self, enviar_parada=True):
@@ -526,11 +871,12 @@ class WallEControlApp:
         self.stop_lectura = None
 
         self.direccion = None
-        self.auto_continuo_activo = False
+        self.set_estado_auto_continuo(False)
         self.set_estado_auto_parada(False)
         self.distancia_sensor = 999
-        self.lbl_distancia.config(text="SENSOR: --- cm")
-        self.set_estado_conexion("● DESCONECTADO", "#8C8C8C")
+        self.ultima_lectura = None
+        self.actualizar_sensor(None)
+        self.set_estado_conexion("desconectado")
 
     def desconectar(self):
         if self.arduino:
@@ -550,6 +896,11 @@ class WallEControlApp:
 
 
 if __name__ == "__main__":
+    try:                                    # Texto nítido en pantallas con escala (125 %, 150 %…)
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
     root = tk.Tk()
     app = WallEControlApp(root)
     root.mainloop()
