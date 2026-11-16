@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Cobot Wall-E: robot controlado por Arduino Uno, Bluetooth HC-05 y una interfaz en Python. Conexiones, componentes y funcionamiento.">
+  <title>COBOT Wall-E | Documentación del proyecto</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===================== NAVEGACIÓN ===================== -->
+  <header class="site-header" id="top">
+    <nav class="nav container" aria-label="Navegación principal">
+      <a href="#inicio" class="brand">COBOT<span>Wall-E</span></a>
+      <button class="nav-toggle" id="navToggle" aria-label="Abrir menú" aria-expanded="false" aria-controls="navLinks">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#inicio">Inicio</a></li>
+        <li><a href="#proposito">Propósito</a></li>
+        <li><a href="#componentes">Componentes</a></li>
+        <li><a href="#conexiones">Conexiones</a></li>
+        <li><a href="#energia">Energía</a></li>
+        <li><a href="#funcionamiento">Funcionamiento</a></li>
+        <li><a href="#simulador">Simulador</a></li>
+        <li><a href="#interfaz">Interfaz</a></li>
+        <li><a href="#notas">Notas</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ===================== INICIO ===================== -->
+    <section class="hero" id="inicio">
+      <div class="container hero-grid">
+        <div class="hero-text">
+          <p class="eyebrow">Proyecto de robótica · Arduino Uno</p>
+          <h1>COBOT <span class="accent">Wall-E</span></h1>
+          <p class="lead">
+            Un robot de orugas con cabeza y brazos articulados, controlado de forma inalámbrica
+            desde una PC por Bluetooth y con un sensor ultrasónico que lo frena antes de chocar.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#conexiones">Ver conexiones</a>
+            <a class="btn btn-ghost" href="#simulador">Probar el simulador</a>
+          </div>
+        </div>
+
+        <ul class="stats" aria-label="Datos clave del proyecto">
+          <li><strong>3</strong><span>servos de 360°</span></li>
+          <li><strong>2</strong><span>lados de tracción</span></li>
+          <li><strong>20 cm</strong><span>freno de emergencia</span></li>
+          <li><strong>9600</strong><span>baudios por Bluetooth</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ===================== PROPÓSITO ===================== -->
+    <section class="section" id="proposito">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">01</p>
+          <h2>¿Para qué está hecho?</h2>
+          <p>Un robot didáctico que combina electrónica, programación y control remoto en un solo proyecto.</p>
+        </header>
+
+        <div class="cards cards-3">
+          <article class="card reveal">
+            <div class="card-icon" aria-hidden="true">🎮</div>
+            <h3>Control remoto</h3>
+            <p>Se maneja desde una aplicación de escritorio: avanzar, retroceder, girar, mover la cabeza y levantar los brazos.</p>
+          </article>
+          <article class="card reveal">
+            <div class="card-icon" aria-hidden="true">🛡️</div>
+            <h3>Evasión de obstáculos</h3>
+            <p>Un sensor frontal mide la distancia 12 veces por segundo y frena el robot si algo está a 20 cm o menos.</p>
+          </article>
+          <article class="card reveal">
+            <div class="card-icon" aria-hidden="true">🤖</div>
+            <h3>Movimientos expresivos</h3>
+            <p>La cabeza y los brazos se mueven de forma independiente o sincronizada, como el personaje de la película.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMPONENTES ===================== -->
+    <section class="section section-alt" id="componentes">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">02</p>
+          <h2>Componentes</h2>
+          <p>Todo lo que lleva el robot y la función de cada pieza.</p>
+        </header>
+
+        <div class="cards cards-4">
+          <article class="card component reveal">
+            <span class="tag">Cerebro</span>
+            <h3>Arduino Uno</h3>
+            <p>Microcontrolador ATmega328P. Recibe los comandos, mueve motores y servos y lee el sensor.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Tracción</span>
+            <h3>Puente H L298N</h3>
+            <p>Controla el sentido y la velocidad (PWM) de los motores del lado izquierdo y del derecho.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Articulaciones</span>
+            <h3>3 servos de 360°</h3>
+            <p>Rotación continua: uno para la cabeza y uno por cada brazo. Se detienen con 90°.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Detección</span>
+            <h3>Sensor HC-SR04</h3>
+            <p>Ultrasónico frontal. Mide la distancia al obstáculo enviando y recibiendo un pulso de sonido.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Comunicación</span>
+            <h3>Módulo HC-05</h3>
+            <p>Bluetooth serial. En Windows aparece como puerto saliente (COM11) a 9600 baudios.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Energía</span>
+            <h3>4 pilas AA (6 V)</h3>
+            <p>Portapilas conectado a VIN y GND del Arduino, sin pasar por el conector Jack.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Movimiento</span>
+            <h3>Motores DC</h3>
+            <p>Ruedas u orugas agrupadas por lado: los dos motores de cada lado se mueven juntos.</p>
+          </article>
+          <article class="card component reveal">
+            <span class="tag">Control</span>
+            <h3>PC con Python</h3>
+            <p>Interfaz gráfica en Tkinter que envía los comandos por el puerto COM y muestra la distancia.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CONEXIONES ===================== -->
+    <section class="section" id="conexiones">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">03</p>
+          <h2>Mapa de conexiones</h2>
+          <p>Pinout completo del Arduino Uno. Filtra por componente o busca por pin.</p>
+        </header>
+
+        <div class="table-tools reveal">
+          <label class="search">
+            <span class="sr-only">Buscar en el pinout</span>
+            <input type="search" id="pinSearch" placeholder="Buscar pin, módulo o función…" autocomplete="off">
+          </label>
+          <div class="chips" id="pinFilters" role="group" aria-label="Filtrar por componente">
+            <button class="chip active" data-filter="all">Todos</button>
+            <button class="chip" data-filter="energia">Energía</button>
+            <button class="chip" data-filter="bluetooth">Bluetooth</button>
+            <button class="chip" data-filter="traccion">Tracción</button>
+            <button class="chip" data-filter="servo">Servos</button>
+            <button class="chip" data-filter="sensor">Sensor</button>
+          </div>
+        </div>
+
+        <div class="table-wrap reveal">
+          <table class="table" id="pinTable">
+            <thead>
+              <tr><th>Pin Arduino</th><th>Módulo</th><th>Pin destino</th><th>Función</th></tr>
+            </thead>
+            <tbody>
+              <tr data-group="energia"><td><code>VIN / GND</code></td><td>Portapilas 6 V</td><td>+ / −</td><td>Alimentación principal de la placa.</td></tr>
+              <tr data-group="energia"><td><code>5V / GND</code></td><td>HC-05 + HC-SR04</td><td>VCC / GND</td><td>5 V regulados para la lógica y los sensores.</td></tr>
+              <tr data-group="bluetooth"><td><code>0 (RX)</code></td><td>Bluetooth HC-05</td><td>TXD</td><td>Recepción de comandos. Desconectar al subir el código.</td></tr>
+              <tr data-group="bluetooth"><td><code>1 (TX)</code></td><td>Bluetooth HC-05</td><td>RXD</td><td>Envío de la telemetría del sensor hacia la PC.</td></tr>
+              <tr data-group="traccion"><td><code>3</code></td><td>Puente H L298N</td><td>ENA</td><td>Velocidad PWM, lado izquierdo.</td></tr>
+              <tr data-group="traccion"><td><code>4</code></td><td>Puente H L298N</td><td>IN1</td><td>Dirección motor izquierdo.</td></tr>
+              <tr data-group="traccion"><td><code>5</code></td><td>Puente H L298N</td><td>IN2</td><td>Dirección motor izquierdo.</td></tr>
+              <tr data-group="traccion"><td><code>6</code></td><td>Puente H L298N</td><td>IN3</td><td>Dirección motor derecho.</td></tr>
+              <tr data-group="traccion"><td><code>7</code></td><td>Puente H L298N</td><td>IN4</td><td>Dirección motor derecho.</td></tr>
+              <tr data-group="servo"><td><code>8</code></td><td>Servo 360°</td><td>Señal</td><td>Brazo izquierdo (lógica invertida por el montaje).</td></tr>
+              <tr data-group="traccion servo" class="row-warn"><td><code>9</code></td><td>L298N + Servo 360°</td><td>ENB / Señal</td><td>Velocidad del motor derecho y cabeza. <a href="#notas">Ver nota</a>.</td></tr>
+              <tr data-group="servo"><td><code>10</code></td><td>Servo 360°</td><td>Señal</td><td>Brazo derecho.</td></tr>
+              <tr data-group="sensor"><td><code>11</code></td><td>HC-SR04</td><td>ECHO</td><td>Recepción del pulso ultrasónico.</td></tr>
+              <tr data-group="sensor"><td><code>12</code></td><td>HC-SR04</td><td>TRIG</td><td>Disparo del pulso ultrasónico.</td></tr>
+            </tbody>
+          </table>
+          <p class="empty" id="pinEmpty" hidden>No hay pines que coincidan con tu búsqueda.</p>
+        </div>
+
+        <aside class="callout callout-warn reveal">
+          <strong>Importante:</strong> los pines 0 y 1 son los mismos que usa el USB.
+          Desconecta el HC-05 antes de subir el código al Arduino y vuelve a conectarlo después.
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===================== ENERGÍA ===================== -->
+    <section class="section section-alt" id="energia">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">04</p>
+          <h2>Sistema de energía</h2>
+          <p>Cómo se alimenta el robot y qué cuidar para que no se reinicie.</p>
+        </header>
+
+        <div class="split">
+          <div class="reveal">
+            <h3>Alimentación actual</h3>
+            <ul class="checklist">
+              <li>Portapilas de <strong>4 baterías AA</strong> (6 V).</li>
+              <li>Conectado directo a <code>VIN</code> y <code>GND</code> del Arduino.</li>
+              <li>Se evita el conector Jack redondo para no perder voltaje.</li>
+              <li>El pin <code>5V</code> alimenta el HC-05 y el HC-SR04.</li>
+            </ul>
+          </div>
+          <div class="reveal">
+            <h3>Recomendaciones</h3>
+            <ul class="checklist warn">
+              <li>El regulador del Uno rinde mejor con unos <strong>7 V</strong>; con 6 V puede quedar justo.</li>
+              <li>Motores y servos arrancando pueden provocar caídas de voltaje y reinicios.</li>
+              <li>Lo ideal es alimentar los servos aparte, uniendo todos los <code>GND</code>.</li>
+              <li>El L298N consume cerca de 2 V: los motores reciben menos que las pilas.</li>
+              <li>El pin RXD del HC-05 trabaja a 3.3 V: usa un divisor de voltaje.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FUNCIONAMIENTO ===================== -->
+    <section class="section" id="funcionamiento">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">05</p>
+          <h2>¿Cómo funciona?</h2>
+          <p>La PC envía letras sueltas; el Arduino las traduce en movimientos y responde con la distancia.</p>
+        </header>
+
+        <div class="flow reveal" aria-label="Flujo de comunicación">
+          <div class="flow-node"><strong>PC</strong><span>Interfaz Python</span></div>
+          <div class="flow-arrow" aria-hidden="true"><span>comandos</span>→</div>
+          <div class="flow-node"><strong>HC-05</strong><span>Bluetooth COM11</span></div>
+          <div class="flow-arrow" aria-hidden="true">→</div>
+          <div class="flow-node"><strong>Arduino</strong><span>Uno</span></div>
+          <div class="flow-arrow" aria-hidden="true">→</div>
+          <div class="flow-node"><strong>Actuadores</strong><span>Motores y servos</span></div>
+        </div>
+        <p class="flow-return reveal">↩ El sensor responde cada 80 ms con <code>DIST:&lt;cm&gt;</code> por el mismo camino.</p>
+
+        <div class="cards cards-3">
+          <article class="card reveal">
+            <span class="step">1</span>
+            <h3>Se envía un comando</h3>
+            <p>Al presionar un botón, Python manda un solo carácter (<code>F</code>, <code>4</code>, <code>U</code>…) por el puerto serial.</p>
+          </article>
+          <article class="card reveal">
+            <span class="step">2</span>
+            <h3>El Arduino ejecuta</h3>
+            <p>Un bloque <code>switch</code> decide la acción: encender motores con PWM 220 o mover un servo a 40°, 90° o 140°.</p>
+          </article>
+          <article class="card reveal">
+            <span class="step">3</span>
+            <h3>El sensor responde</h3>
+            <p>Cada 80 ms se mide la distancia con <code>pulseIn()</code>. Si no hay eco se envía 999.</p>
+          </article>
+        </div>
+
+        <h3 class="sub-title reveal">Protocolo de comandos</h3>
+        <div class="table-tools reveal">
+          <label class="search">
+            <span class="sr-only">Buscar comando</span>
+            <input type="search" id="cmdSearch" placeholder="Buscar comando o acción…" autocomplete="off">
+          </label>
+        </div>
+        <div class="table-wrap reveal">
+          <table class="table" id="cmdTable">
+            <thead><tr><th>Comando</th><th>Grupo</th><th>Acción</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>F</kbd></td><td>Tracción</td><td>Avanzar con ambos lados a PWM 220.</td></tr>
+              <tr><td><kbd>B</kbd></td><td>Tracción</td><td>Retroceder con ambos lados a PWM 220.</td></tr>
+              <tr><td><kbd>L</kbd></td><td>Tracción</td><td>Giro progresivo a la izquierda: detiene un lado y mueve solo el opuesto.</td></tr>
+              <tr><td><kbd>R</kbd></td><td>Tracción</td><td>Giro progresivo a la derecha.</td></tr>
+              <tr><td><kbd>S</kbd></td><td>Tracción</td><td>Frenar los motores.</td></tr>
+              <tr><td><kbd>4</kbd> <kbd>5</kbd> <kbd>6</kbd></td><td>Brazo izquierdo</td><td>Subir (40) · bajar (140) · detener (90). Valores invertidos por el montaje.</td></tr>
+              <tr><td><kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd></td><td>Brazo derecho</td><td>Subir (140) · bajar (40) · detener (90).</td></tr>
+              <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Cabeza</td><td>Girar a un lado (140) · al otro (40) · detener (90).</td></tr>
+              <tr><td><kbd>A</kbd></td><td>Cabeza</td><td>Rutina automática: 5 s a un lado, 5 s al otro y vuelve al centro.</td></tr>
+              <tr><td><kbd>U</kbd> <kbd>D</kbd> <kbd>N</kbd></td><td>Ambos brazos</td><td>Subir ambos · bajar ambos · detener ambos, de forma sincronizada.</td></tr>
+              <tr><td><kbd>X</kbd></td><td>General</td><td>Frenar motores y detener todos los servos.</td></tr>
+            </tbody>
+          </table>
+          <p class="empty" id="cmdEmpty" hidden>No hay comandos que coincidan con tu búsqueda.</p>
+        </div>
+
+        <div class="split snippet-block reveal">
+          <div>
+            <h3>Ejemplo de código (Arduino)</h3>
+            <p>Así se procesa cada comando recibido:</p>
+          </div>
+          <div class="code-box">
+            <button class="copy-btn" data-copy-target="#codeSample">Copiar</button>
+<pre><code id="codeSample">void loop() {
+  if (Serial.available() &gt; 0) {
+    char cmd = Serial.read();
+    procesarComando(cmd);
+  }
+
+  if (millis() - ultimoUltrasonico &gt; 80) {
+    ultimoUltrasonico = millis();
+    Serial.print("DIST:");
+    Serial.println(medirDistancia());
+  }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== SIMULADOR ===================== -->
+    <section class="section section-alt" id="simulador">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">06</p>
+          <h2>Simulador del robot</h2>
+          <p>Envía comandos y mueve el control de distancia para ver cómo reaccionaría el robot. No usa el robot real.</p>
+        </header>
+
+        <div class="sim reveal">
+          <div class="sim-panel">
+            <h3>Comandos</h3>
+            <div class="sim-buttons" id="simButtons">
+              <button data-cmd="F">▲ Avanzar <kbd>F</kbd></button>
+              <button data-cmd="B">▼ Atrás <kbd>B</kbd></button>
+              <button data-cmd="L">◄ Izquierda <kbd>L</kbd></button>
+              <button data-cmd="R">Derecha ► <kbd>R</kbd></button>
+              <button data-cmd="S" class="danger">■ Parar <kbd>S</kbd></button>
+              <button data-cmd="U">🙌 Subir brazos <kbd>U</kbd></button>
+              <button data-cmd="D">👇 Bajar brazos <kbd>D</kbd></button>
+              <button data-cmd="N">Brazos 90° <kbd>N</kbd></button>
+              <button data-cmd="1">Cabeza ◀ <kbd>1</kbd></button>
+              <button data-cmd="2">Cabeza ▶ <kbd>2</kbd></button>
+              <button data-cmd="3">Cabeza centro <kbd>3</kbd></button>
+              <button data-cmd="X" class="danger">⛔ Parar todo <kbd>X</kbd></button>
+            </div>
+
+            <h3>Sensor de distancia</h3>
+            <div class="slider-row">
+              <input type="range" id="simDist" min="2" max="200" value="120" aria-label="Distancia al obstáculo en centímetros">
+              <output id="simDistOut">120 cm</output>
+            </div>
+            <div class="dist-bar" aria-hidden="true">
+              <div class="dist-fill" id="distFill"></div>
+              <div class="dist-limit" title="Límite de frenado: 20 cm"></div>
+            </div>
+            <p class="hint">La línea roja marca el límite de 20 cm. Avanza el robot y acerca el obstáculo.</p>
+          </div>
+
+          <div class="sim-panel">
+            <h3>Estado</h3>
+            <dl class="state">
+              <div><dt>Tracción</dt><dd id="stTrac" class="badge">Detenido</dd></div>
+              <div><dt>Brazos</dt><dd id="stBrazos" class="badge">90° (detenidos)</dd></div>
+              <div><dt>Cabeza</dt><dd id="stCabeza" class="badge">Centro</dd></div>
+              <div><dt>Sensor</dt><dd id="stSensor" class="badge ok">Libre</dd></div>
+            </dl>
+
+            <h3>Consola serial</h3>
+            <div class="console" id="simConsole" role="log" aria-live="polite">
+              <p class="muted">// Esperando comandos…</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="simClear">Limpiar consola</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== INTERFAZ ===================== -->
+    <section class="section" id="interfaz">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">07</p>
+          <h2>Interfaz de control (Python)</h2>
+          <p>Aplicación de escritorio hecha con Tkinter y pyserial.</p>
+        </header>
+
+        <div class="cards cards-4">
+          <article class="card reveal">
+            <h3>Principal</h3>
+            <p>Vista dividida: servos a la izquierda y cruceta de tracción a la derecha.</p>
+          </article>
+          <article class="card reveal">
+            <h3>Servos</h3>
+            <p>Pantalla completa. El servo se mueve mientras mantienes el botón y se detiene al soltarlo.</p>
+          </article>
+          <article class="card reveal">
+            <h3>Ruedas</h3>
+            <p>Cruceta de dirección y botón de modo auto con un solo toque.</p>
+          </article>
+          <article class="card reveal">
+            <h3>Auto continuo</h3>
+            <p>Avanza solo hasta encontrar un obstáculo o hasta presionar Detener.</p>
+          </article>
+        </div>
+
+        <div class="split">
+          <div class="reveal">
+            <h3>Seguridad activa</h3>
+            <ul class="checklist">
+              <li><strong>Freno de emergencia:</strong> si el sensor marca 20 cm o menos mientras avanza, se envía <code>S</code>.</li>
+              <li><strong>Bloqueo de navegación:</strong> no se puede cambiar de sección con las ruedas en movimiento.</li>
+              <li><strong>Desconexión segura:</strong> al desconectar o cerrar la ventana se envía <code>X</code>.</li>
+              <li><strong>Aviso de conexión perdida</strong> si el Bluetooth se cae.</li>
+            </ul>
+          </div>
+          <div class="reveal">
+            <h3>Cómo ejecutarla</h3>
+            <div class="code-box">
+              <button class="copy-btn" data-copy-target="#codeRun">Copiar</button>
+<pre><code id="codeRun">pip install pyserial
+python interfaz.py</code></pre>
+            </div>
+            <ol class="steps">
+              <li>Empareja el HC-05 en Windows (clave habitual: <code>1234</code> o <code>0000</code>).</li>
+              <li>Busca el puerto saliente (COM11) en la configuración de Bluetooth.</li>
+              <li>Elige el puerto en la lista y pulsa <strong>CONECTAR</strong>.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== NOTAS ===================== -->
+    <section class="section section-alt" id="notas">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow">08</p>
+          <h2>Notas técnicas y mejoras</h2>
+          <p>Puntos a tener en cuenta y cambios sugeridos para un funcionamiento más estable.</p>
+        </header>
+
+        <div class="notes">
+          <details class="note reveal" open>
+            <summary>Pin 9 compartido entre ENB y la cabeza</summary>
+            <p>
+              La librería <code>Servo</code> usa el Timer1 del Uno y desactiva el PWM de los pines 9 y 10.
+              Con el pin 9 compartido, el pulso del servo llega al <code>ENB</code> y el PWM del motor interfiere con la cabeza.
+            </p>
+            <p><strong>Sugerencia:</strong> mover <code>ENB</code> al pin 11 (PWM por Timer2) y <code>ECHO</code> al pin 13.</p>
+          </details>
+          <details class="note reveal">
+            <summary>La rutina automática de la cabeza bloquea el Arduino</summary>
+            <p>
+              Usa <code>delay()</code> durante 10 s. En ese tiempo no responde a comandos ni lee el sensor,
+              así que el freno de emergencia queda inactivo. Se puede reemplazar por una versión basada en <code>millis()</code>.
+            </p>
+          </details>
+          <details class="note reveal">
+            <summary>Alimentación compartida</summary>
+            <p>
+              Motores, servos, Bluetooth y sensor salen de las mismas 4 pilas. Si el Bluetooth se desconecta
+              al arrancar los motores, suele ser una caída de voltaje: separa la alimentación de los servos y de los motores.
+            </p>
+          </details>
+          <details class="note reveal">
+            <summary>Cierres inesperados de la interfaz (ya corregido)</summary>
+            <p>
+              La versión original actualizaba la interfaz de Tkinter desde otro hilo. La versión actual usa una cola
+              de datos, abre el puerto en segundo plano y maneja la pérdida de conexión.
+            </p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== PIE ===================== -->
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a href="#inicio" class="brand">COBOT<span>Wall-E</span></a>
+        <p>Proyecto de robótica con Arduino Uno, Bluetooth y Python.</p>
+      </div>
+      <p class="copy">© <span id="year"></span> COBOT Wall-E · Documentación del proyecto</p>
+    </div>
+  </footer>
+
+  <button class="to-top" id="toTop" aria-label="Volver arriba" hidden>↑</button>
+
+  <script src="script.js"></script>
+</body>
+</html>
