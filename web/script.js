@@ -213,7 +213,7 @@
         return;
       }
       estado.traccion = cmd;
-      log("< " + TRACCION[cmd] + " (PWM 220)", "rx");
+      log("< " + TRACCION[cmd] + " (PWM 200)", "rx");
     } else if (cmd === "S") {
       estado.traccion = null;
       log("< Motores detenidos", "rx");

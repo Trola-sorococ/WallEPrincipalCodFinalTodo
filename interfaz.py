@@ -24,6 +24,7 @@ RE_DIST = re.compile(rb"DIST:(\d+)")
 FUENTE = "Segoe UI"
 TEMA_INICIAL = "Carbón y Ámbar"   # Cambia este nombre para arrancar con otro tema
 HUECO = 6                         # Separación (px) entre botones de la cruceta
+RUTINA_CABEZA_S = 10              # Duración de la rutina de la cabeza: 2 tramos de 5 s, igual que el .ino
 
 # Cada tema define los mismos colores; el resto de la interfaz solo usa estos nombres.
 TEMAS = {
@@ -201,6 +202,7 @@ class Boton(tk.Frame):
 class WallEControlApp:
     TXT_AUTO_OFF = "MODO AUTO   ·   1 TOQUE"
     TXT_AUTO_ON = "AUTO ACTIVO   ·   TOCA PARA DETENER"
+    TXT_RUTINA_OFF = f"AUTO   ·   RUTINA {RUTINA_CABEZA_S} s"
     ESTADOS_CONEXION = {
         "desconectado": ("DESCONECTADO", "apagado"),
         "conectando": ("CONECTANDO…", "aviso"),
@@ -239,6 +241,9 @@ class WallEControlApp:
         self.auto_continuo_activo = False
         self.botones_auto_parada = []       # El botón de modo auto aparece en 2 pantallas
         self.botones_control = []           # Botones que requieren conexión
+        self.botones_auto_cabeza = []       # El botón AUTO de la cabeza aparece en 2 pantallas
+        self.rutina_cabeza_restante = 0     # Segundos que faltan de la rutina (0 = inactiva)
+        self._id_rutina = None              # Temporizador de la cuenta regresiva
 
         self.aplicar_estilos_ttk()
         self.construir_splash()
@@ -298,6 +303,7 @@ class WallEControlApp:
         self.frame_app.destroy()
         self.botones_auto_parada = []
         self.botones_control = []
+        self.botones_auto_cabeza = []
         self.aplicar_estilos_ttk()
         self.root.configure(bg=self.tema["fondo"])
         self.construir_interfaz()
@@ -438,6 +444,7 @@ class WallEControlApp:
         self.actualizar_sensor(self.ultima_lectura)
         self.set_estado_auto_parada(self.auto_con_parada_activo)
         self.set_estado_auto_continuo(self.auto_continuo_activo)
+        self._pintar_rutina_cabeza()
 
     def centrar(self, frame):
         centro = tk.Frame(frame, bg=self.tema["fondo"])
@@ -575,9 +582,11 @@ class WallEControlApp:
                       ).grid(row=fila, column=col, columnspan=span,
                              padx=(p(HUECO) if col else 0, 0), pady=p(5))
             if titulo == "CABEZA":
-                Boton(cuerpo, self, "AUTO   ·   RUTINA 10 s", "secundario", ancho, alto, control=True,
-                      fuente=(FUENTE, 10, "bold"),
-                      al_click=lambda: self.enviar('A')).grid(row=1, column=0, columnspan=2, pady=p(5))
+                auto = Boton(cuerpo, self, self.TXT_RUTINA_OFF, "secundario", ancho, alto,
+                             control=True, fuente=(FUENTE, 10, "bold"),
+                             al_click=self.alternar_rutina_cabeza)
+                auto.grid(row=1, column=0, columnspan=2, pady=p(5))
+                self.botones_auto_cabeza.append(auto)
         for c in range(columnas):
             panel.grid_columnconfigure(c, weight=1, uniform="servos")
         return panel
@@ -674,6 +683,8 @@ class WallEControlApp:
             self.direccion = char_cmd
         elif char_cmd in ('S', 'X'):
             self.direccion = None
+        if char_cmd in ('1', '2', '3', 'X'):
+            self.terminar_rutina_cabeza()   # Mover la cabeza a mano cancela la rutina automática
         return True
 
     def presionar_avanzar_manual(self):
@@ -724,6 +735,44 @@ class WallEControlApp:
     def detener_auto_continuo(self):
         self.set_estado_auto_continuo(False)
         self.enviar('S')
+
+    # ----- Rutina automática de la cabeza -----
+    def alternar_rutina_cabeza(self):
+        """Botón AUTO de la cabeza: inicia la rutina o, si ya está en marcha, la cancela."""
+        if self.rutina_cabeza_restante > 0:
+            self.enviar('3')                # El Arduino cancela la rutina y detiene la cabeza
+        elif self.enviar('A'):
+            self.rutina_cabeza_restante = RUTINA_CABEZA_S
+            self._pintar_rutina_cabeza()
+            self._id_rutina = self.root.after(1000, self._tick_rutina_cabeza)
+
+    def _tick_rutina_cabeza(self):
+        self._id_rutina = None
+        if self.rutina_cabeza_restante <= 0:
+            return                          # Temporizador sobrante: la rutina ya había terminado
+        self.rutina_cabeza_restante -= 1
+        if self.rutina_cabeza_restante > 0:
+            self._id_rutina = self.root.after(1000, self._tick_rutina_cabeza)
+        self._pintar_rutina_cabeza()
+
+    def terminar_rutina_cabeza(self):
+        """Marca la rutina como terminada (acabó sola, se canceló o se movió la cabeza a mano)."""
+        if self._id_rutina is not None:
+            self.root.after_cancel(self._id_rutina)
+            self._id_rutina = None
+        if self.rutina_cabeza_restante:
+            self.rutina_cabeza_restante = 0
+            self._pintar_rutina_cabeza()
+
+    def _pintar_rutina_cabeza(self):
+        restante = self.rutina_cabeza_restante
+        for btn in self.botones_auto_cabeza:
+            if restante > 0:
+                btn.set_estilo("peligro")
+                btn.set_texto(f"■   CANCELAR   ·   {restante} s")
+            else:
+                btn.set_estilo("secundario")
+                btn.set_texto(self.TXT_RUTINA_OFF)
 
     def frenar_por_obstaculo(self):
         """Freno de emergencia. Solo actúa si el robot va hacia adelante (marcha atrás libre)."""
@@ -871,6 +920,7 @@ class WallEControlApp:
         self.stop_lectura = None
 
         self.direccion = None
+        self.terminar_rutina_cabeza()
         self.set_estado_auto_continuo(False)
         self.set_estado_auto_parada(False)
         self.distancia_sensor = 999

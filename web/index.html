@@ -180,10 +180,11 @@
               <tr data-group="traccion"><td><code>6</code></td><td>Puente H L298N</td><td>IN3</td><td>Dirección motor derecho.</td></tr>
               <tr data-group="traccion"><td><code>7</code></td><td>Puente H L298N</td><td>IN4</td><td>Dirección motor derecho.</td></tr>
               <tr data-group="servo"><td><code>8</code></td><td>Servo 360°</td><td>Señal</td><td>Brazo izquierdo (lógica invertida por el montaje).</td></tr>
-              <tr data-group="traccion servo" class="row-warn"><td><code>9</code></td><td>L298N + Servo 360°</td><td>ENB / Señal</td><td>Velocidad del motor derecho y cabeza. <a href="#notas">Ver nota</a>.</td></tr>
+              <tr data-group="servo"><td><code>9</code></td><td>Servo 360°</td><td>Señal</td><td>Cabeza.</td></tr>
               <tr data-group="servo"><td><code>10</code></td><td>Servo 360°</td><td>Señal</td><td>Brazo derecho.</td></tr>
-              <tr data-group="sensor"><td><code>11</code></td><td>HC-SR04</td><td>ECHO</td><td>Recepción del pulso ultrasónico.</td></tr>
+              <tr data-group="traccion"><td><code>11</code></td><td>Puente H L298N</td><td>ENB</td><td>Velocidad PWM, lado derecho.</td></tr>
               <tr data-group="sensor"><td><code>12</code></td><td>HC-SR04</td><td>TRIG</td><td>Disparo del pulso ultrasónico.</td></tr>
+              <tr data-group="sensor"><td><code>13</code></td><td>HC-SR04</td><td>ECHO</td><td>Recepción del pulso ultrasónico.</td></tr>
             </tbody>
           </table>
           <p class="empty" id="pinEmpty" hidden>No hay pines que coincidan con tu búsqueda.</p>
@@ -192,6 +193,12 @@
         <aside class="callout callout-warn reveal">
           <strong>Importante:</strong> los pines 0 y 1 son los mismos que usa el USB.
           Desconecta el HC-05 antes de subir el código al Arduino y vuelve a conectarlo después.
+        </aside>
+
+        <aside class="callout reveal">
+          <strong>Cambio de cableado:</strong> para evitar el conflicto del pin 9, mueve primero el cable
+          <code>ECHO</code> del pin 11 al <strong>13</strong> y después el cable <code>ENB</code> del pin 9
+          al <strong>11</strong>. La cabeza se queda sola en el pin 9.
         </aside>
       </div>
     </section>
@@ -258,7 +265,7 @@
           <article class="card reveal">
             <span class="step">2</span>
             <h3>El Arduino ejecuta</h3>
-            <p>Un bloque <code>switch</code> decide la acción: encender motores con PWM 220 o mover un servo a 40°, 90° o 140°.</p>
+            <p>Un bloque <code>switch</code> decide la acción: encender motores con PWM 200 o mover un servo a 40°, 90° o 140°.</p>
           </article>
           <article class="card reveal">
             <span class="step">3</span>
@@ -278,17 +285,17 @@
           <table class="table" id="cmdTable">
             <thead><tr><th>Comando</th><th>Grupo</th><th>Acción</th></tr></thead>
             <tbody>
-              <tr><td><kbd>F</kbd></td><td>Tracción</td><td>Avanzar con ambos lados a PWM 220.</td></tr>
-              <tr><td><kbd>B</kbd></td><td>Tracción</td><td>Retroceder con ambos lados a PWM 220.</td></tr>
-              <tr><td><kbd>L</kbd></td><td>Tracción</td><td>Giro progresivo a la izquierda: detiene un lado y mueve solo el opuesto.</td></tr>
-              <tr><td><kbd>R</kbd></td><td>Tracción</td><td>Giro progresivo a la derecha.</td></tr>
+              <tr><td><kbd>F</kbd></td><td>Tracción</td><td>Avanzar con ambos lados a PWM 200.</td></tr>
+              <tr><td><kbd>B</kbd></td><td>Tracción</td><td>Retroceder con ambos lados a PWM 200.</td></tr>
+              <tr><td><kbd>L</kbd></td><td>Tracción</td><td>Giro sobre su propio eje a la izquierda: el lado izquierdo retrocede y el derecho avanza.</td></tr>
+              <tr><td><kbd>R</kbd></td><td>Tracción</td><td>Giro sobre su propio eje a la derecha: el lado izquierdo avanza y el derecho retrocede.</td></tr>
               <tr><td><kbd>S</kbd></td><td>Tracción</td><td>Frenar los motores.</td></tr>
               <tr><td><kbd>4</kbd> <kbd>5</kbd> <kbd>6</kbd></td><td>Brazo izquierdo</td><td>Subir (40) · bajar (140) · detener (90). Valores invertidos por el montaje.</td></tr>
               <tr><td><kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd></td><td>Brazo derecho</td><td>Subir (140) · bajar (40) · detener (90).</td></tr>
-              <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Cabeza</td><td>Girar a un lado (140) · al otro (40) · detener (90).</td></tr>
-              <tr><td><kbd>A</kbd></td><td>Cabeza</td><td>Rutina automática: 5 s a un lado, 5 s al otro y vuelve al centro.</td></tr>
+              <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Cabeza</td><td>Girar a un lado (140) · al otro (40) · detener (90). Cancelan la rutina automática si estaba activa.</td></tr>
+              <tr><td><kbd>A</kbd></td><td>Cabeza</td><td>Rutina automática: 5 s a un lado, 5 s al otro y vuelve al centro. No bloquea al Arduino y se cancela con <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd> o <kbd>X</kbd>.</td></tr>
               <tr><td><kbd>U</kbd> <kbd>D</kbd> <kbd>N</kbd></td><td>Ambos brazos</td><td>Subir ambos · bajar ambos · detener ambos, de forma sincronizada.</td></tr>
-              <tr><td><kbd>X</kbd></td><td>General</td><td>Frenar motores y detener todos los servos.</td></tr>
+              <tr><td><kbd>X</kbd></td><td>General</td><td>Frenar motores, detener todos los servos y cancelar la rutina de la cabeza.</td></tr>
             </tbody>
           </table>
           <p class="empty" id="cmdEmpty" hidden>No hay comandos que coincidan con tu búsqueda.</p>
@@ -306,6 +313,8 @@
     char cmd = Serial.read();
     procesarComando(cmd);
   }
+
+  actualizarAutoCabeza();   // rutina de la cabeza sin bloquear
 
   if (millis() - ultimoUltrasonico &gt; 80) {
     ultimoUltrasonico = millis();
@@ -392,11 +401,11 @@
           </article>
           <article class="card reveal">
             <h3>Servos</h3>
-            <p>Pantalla completa. El servo se mueve mientras mantienes el botón y se detiene al soltarlo.</p>
+            <p>El servo se mueve mientras mantienes el botón y se detiene al soltarlo. La rutina AUTO de la cabeza cuenta los 10 s y se puede cancelar.</p>
           </article>
           <article class="card reveal">
             <h3>Ruedas</h3>
-            <p>Cruceta de dirección y botón de modo auto con un solo toque.</p>
+            <p>Cruceta de dirección con botón STOP y modo auto de un solo toque.</p>
           </article>
           <article class="card reveal">
             <h3>Auto continuo</h3>
@@ -442,18 +451,22 @@ python interfaz.py</code></pre>
 
         <div class="notes">
           <details class="note reveal" open>
-            <summary>Pin 9 compartido entre ENB y la cabeza</summary>
+            <summary>Conflicto del pin 9 entre ENB y la cabeza (ya corregido)</summary>
             <p>
-              La librería <code>Servo</code> usa el Timer1 del Uno y desactiva el PWM de los pines 9 y 10.
-              Con el pin 9 compartido, el pulso del servo llega al <code>ENB</code> y el PWM del motor interfiere con la cabeza.
+              Antes, <code>ENB</code> y la señal de la cabeza compartían el pin 9. La librería <code>Servo</code> usa el Timer1
+              del Uno y desactiva el PWM de los pines 9 y 10, así que el motor derecho y la cabeza se interferían.
             </p>
-            <p><strong>Sugerencia:</strong> mover <code>ENB</code> al pin 11 (PWM por Timer2) y <code>ECHO</code> al pin 13.</p>
+            <p>
+              <strong>Ahora:</strong> <code>ENB</code> está en el pin 11 (PWM por Timer2) y <code>ECHO</code> en el 13.
+              Si tu robot sigue cableado a la versión anterior, mueve <code>ECHO</code> de 11 a 13 y después <code>ENB</code> de 9 a 11.
+            </p>
           </details>
           <details class="note reveal">
-            <summary>La rutina automática de la cabeza bloquea el Arduino</summary>
+            <summary>Rutina de la cabeza sin bloqueo (ya corregido)</summary>
             <p>
-              Usa <code>delay()</code> durante 10 s. En ese tiempo no responde a comandos ni lee el sensor,
-              así que el freno de emergencia queda inactivo. Se puede reemplazar por una versión basada en <code>millis()</code>.
+              Antes usaba <code>delay()</code> durante 10 s: el Arduino no respondía a comandos ni leía el sensor,
+              así que el freno de emergencia quedaba inactivo. Ahora avanza con <code>millis()</code>: el robot sigue
+              respondiendo, el sensor sigue enviando datos y la rutina se cancela con <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd> o <kbd>X</kbd>.
             </p>
           </details>
           <details class="note reveal">
